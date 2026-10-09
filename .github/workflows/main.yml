@@ -2,7 +2,7 @@ name: Build USC-CAM (iOS .ipa + Windows .exe)
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -13,6 +13,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Select Xcode
+        shell: bash
+        run: |
+          set -euxo pipefail
+          xcode-select -p
+          sudo xcodebuild -license accept || true
+
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -20,13 +27,20 @@ jobs:
 
       - name: Generate Xcode project
         working-directory: USC-CAM-main
+        shell: bash
         run: |
+          set -euxo pipefail
           brew install xcodegen
           xcodegen generate
+          ls -la
+          test -f USBWebcam.xcodeproj/project.pbxproj
+          xcodebuild -list -project USBWebcam.xcodeproj
 
       - name: Build app (unsigned)
         working-directory: USC-CAM-main
+        shell: bash
         run: |
+          set -euxo pipefail
           xcodebuild -project USBWebcam.xcodeproj \
                      -scheme USBWebcam \
                      -sdk iphoneos \
@@ -40,12 +54,18 @@ jobs:
 
       - name: Package .ipa
         working-directory: USC-CAM-main
+        shell: bash
         run: |
-          APP="build/Build/Products/Release-iphoneos/USBWebcam.app"
-          test -d "$APP" || { echo "App not found"; find build -name "*.app" -maxdepth 6; exit 1; }
+          set -euxo pipefail
+          APP=$(find "$PWD/build" -path '*/Build/Products/Release-iphoneos/*.app' -print -quit)
+          echo "Detected app: ${APP:-<none>}"
+          test -n "$APP"
+          test -d "$APP"
+
           rm -rf Payload output
           mkdir -p Payload output
-          cp -r "$APP" Payload/
+          cp -R "$APP" Payload/
+
           zip -qry output/USC-CAM.ipa Payload
 
       - name: Upload IPA Artifact
@@ -68,25 +88,36 @@ jobs:
 
       - name: Install Dependencies
         working-directory: USC-CAM-main
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install opencv-python-headless numpy pyqt5 pyvirtualcam av pyinstaller
+          set -euxo pipefail
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install opencv-python-headless numpy pyqt5 pyvirtualcam av pyinstaller
 
       - name: Add camera driver
         shell: bash
         working-directory: USC-CAM-main
         run: |
+          set -euxo pipefail
           git clone --depth 1 https://github.com/schellingb/UnityCapture.git uc
           mkdir -p drv
+
           f64=$(find uc -type f -iname "UnityCaptureFilter64bit.dll" -not -path "uc/.git/*" | head -1)
           f32=$(find uc -type f -iname "UnityCaptureFilter32bit.dll" -not -path "uc/.git/*" | head -1)
+
           if [ -z "$f64" ] || [ -z "$f32" ]; then
-            echo "UnityCapture DLLs not found. Repo files:"; find uc -type f -not -path "uc/.git/*" | head -60; exit 1
+            echo "UnityCapture DLLs not found. Repo files:"
+            find uc -type f -not -path "uc/.git/*" | head -60
+            exit 1
           fi
+
           cp -v "$f64" drv/HDCameraiPhone64.dll
           cp -v "$f32" drv/HDCameraiPhone32.dll
+
           lic=$(find uc -maxdepth 1 -iname "LICENSE*" | head -1)
-          [ -n "$lic" ] && cp "$lic" drv/LICENSE-UnityCapture.txt || true
+          if [ -n "$lic" ]; then
+            cp "$lic" drv/LICENSE-UnityCapture.txt
+          fi
 
       - name: Build single-file EXE
         shell: bash
@@ -95,6 +126,7 @@ jobs:
           MSYS_NO_PATHCONV: "1"
           MSYS2_ARG_CONV_EXCL: "*"
         run: |
+          set -euxo pipefail
           pyinstaller --noconfirm --onefile --windowed \
             --name "USC-CAM" \
             --icon desktop/icon.ico \
@@ -109,9 +141,10 @@ jobs:
         shell: bash
         working-directory: USC-CAM-main
         run: |
+          set -euxo pipefail
           mkdir -p dist/driver
-          cp drv/* dist/driver/
-          cp desktop/Install-HD-Camera.bat desktop/Uninstall-HD-Camera.bat dist/
+          cp -v drv/* dist/driver/
+          cp -v desktop/Install-HD-Camera.bat desktop/Uninstall-HD-Camera.bat dist/
 
       - name: Upload EXE Artifact
         uses: actions/upload-artifact@v4
@@ -141,7 +174,9 @@ jobs:
           path: release/
 
       - name: Create ZIP
+        shell: bash
         run: |
+          set -euxo pipefail
           cd release
           zip -r ../USC-CAM-Package.zip .
 
