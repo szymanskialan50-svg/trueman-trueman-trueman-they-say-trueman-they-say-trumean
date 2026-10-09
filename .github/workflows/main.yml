@@ -26,37 +26,37 @@ jobs:
           xcode-version: latest-stable
 
       - name: Generate Xcode project
+        working-directory: USC-CAM-main
         shell: bash
         run: |
           set -euxo pipefail
-          cd "$GITHUB_WORKSPACE/USC-CAM-main"
           brew install xcodegen
-          xcodegen generate --spec project.yml
+          xcodegen generate
           ls -la
           test -f USBWebcam.xcodeproj/project.pbxproj
           xcodebuild -list -project USBWebcam.xcodeproj
 
       - name: Build app (unsigned)
+        working-directory: USC-CAM-main
         shell: bash
         run: |
           set -euxo pipefail
-          cd "$GITHUB_WORKSPACE/USC-CAM-main"
           xcodebuild -project USBWebcam.xcodeproj \
-            -scheme USBWebcam \
-            -sdk iphoneos \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            clean build
+                     -scheme USBWebcam \
+                     -sdk iphoneos \
+                     -configuration Release \
+                     -destination 'generic/platform=iOS' \
+                     -derivedDataPath build \
+                     CODE_SIGN_IDENTITY="" \
+                     CODE_SIGNING_REQUIRED=NO \
+                     CODE_SIGNING_ALLOWED=NO \
+                     clean build
 
       - name: Package .ipa
+        working-directory: USC-CAM-main
         shell: bash
         run: |
           set -euxo pipefail
-          cd "$GITHUB_WORKSPACE/USC-CAM-main"
           APP=$(find "$PWD/build" -path '*/Build/Products/Release-iphoneos/*.app' -print -quit)
           echo "Detected app: ${APP:-<none>}"
           test -n "$APP"
@@ -72,7 +72,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: ${{ github.workspace }}/USC-CAM-main/output/USC-CAM.ipa
+          path: USC-CAM-main/output/USC-CAM.ipa
 
   build-windows:
     name: Build Windows EXE
@@ -84,26 +84,26 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: '3.10'
 
       - name: Install Dependencies
+        working-directory: USC-CAM-main
         shell: bash
         run: |
           set -euxo pipefail
-          cd "$GITHUB_WORKSPACE/USC-CAM-main"
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install opencv-python-headless numpy pyqt5 pyvirtualcam av pyinstaller
 
       - name: Add camera driver
         shell: bash
+        working-directory: USC-CAM-main
         run: |
           set -euxo pipefail
-          cd "$GITHUB_WORKSPACE/USC-CAM-main"
           git clone --depth 1 https://github.com/schellingb/UnityCapture.git uc
           mkdir -p drv
 
-          f64=$(find uc -type f -iname "UnityCaptureFilter64bit.dll" -not -path "uc/.git/*" | head -1)
-          f32=$(find uc -type f -iname "UnityCaptureFilter32bit.dll" -not -path "uc/.git/*" | head -1)
+          f64=$(find uc -type f -iname "UnityCaptureFilter64.dll" -not -path "uc/.git/*" | head -1)
+          f32=$(find uc -type f -iname "UnityCaptureFilter32.dll" -not -path "uc/.git/*" | head -1)
 
           if [ -z "$f64" ] || [ -z "$f32" ]; then
             echo "UnityCapture DLLs not found. Repo files:"
@@ -120,25 +120,28 @@ jobs:
           fi
 
       - name: Build single-file EXE
-        shell: pwsh
+        shell: bash
+        working-directory: USC-CAM-main
+        env:
+          MSYS_NO_PATHCONV: "1"
+          MSYS2_ARG_CONV_EXCL: "*"
         run: |
-          $proj = Join-Path $env:GITHUB_WORKSPACE "USC-CAM-main"
-          Set-Location $proj
-          pyinstaller --noconfirm --onefile --windowed `
-            --name "USC-CAM" `
-            --icon "$proj\desktop\icon.ico" `
-            --add-data "$proj\desktop\icon.ico;." `
-            --add-data "$proj\drv;driver" `
-            --paths "$proj\desktop" `
-            --collect-all pyvirtualcam `
-            --collect-all av `
-            "$proj\desktop\main.py"
+          set -euxo pipefail
+          pyinstaller --noconfirm --onefile --windowed \
+            --name "USC-CAM" \
+            --icon desktop/icon.ico \
+            --add-data "desktop/icon.ico;." \
+            --add-data "drv;driver" \
+            --paths desktop \
+            --collect-all pyvirtualcam \
+            --collect-all av \
+            desktop/main.py
 
       - name: Collect files
         shell: bash
+        working-directory: USC-CAM-main
         run: |
           set -euxo pipefail
-          cd "$GITHUB_WORKSPACE/USC-CAM-main"
           mkdir -p dist/driver
           cp -v drv/* dist/driver/
           cp -v desktop/Install-HD-Camera.bat desktop/Uninstall-HD-Camera.bat dist/
@@ -148,10 +151,10 @@ jobs:
         with:
           name: windows-exe
           path: |
-            ${{ github.workspace }}/USC-CAM-main/dist/USC-CAM.exe
-            ${{ github.workspace }}/USC-CAM-main/dist/driver/
-            ${{ github.workspace }}/USC-CAM-main/dist/Install-HD-Camera.bat
-            ${{ github.workspace }}/USC-CAM-main/dist/Uninstall-HD-Camera.bat
+            USC-CAM-main/dist/USC-CAM.exe
+            USC-CAM-main/dist/driver/
+            USC-CAM-main/dist/Install-HD-Camera.bat
+            USC-CAM-main/dist/Uninstall-HD-Camera.bat
 
   package-zip:
     name: Bundle final ZIP
